@@ -1,0 +1,326 @@
+#include<stdio.h>
+#include<string.h>
+#include<stdlib.h>
+#include<unistd.h>
+#include<sys/types.h>
+#include<sys/wait.h>
+#include<readline/readline.h>
+#include<readline/history.h>
+
+#define MAX_LETTERS 1000 
+#define MAX_ARRAY 100 
+
+// Clearing the shell using escape sequences
+#define clear() printf("\033[H\033[J")
+
+// linked list print + inilization help https://www.tutorialspoint.com/data_structures_algorithms/linked_list_program_in_c.htm
+
+//gcc my-shell.c -lreadline
+//./a.out 
+
+
+
+// linked list 
+struct bg_process {
+   pid_t pid;
+   char command[MAX_LETTERS];
+   struct bg_process *next;
+};
+
+struct bg_process *head = NULL;
+struct bg_process *current = NULL;
+
+
+// check for length of linked list 
+int length() {
+   int length = 0;
+   struct bg_process *current;
+	
+   for(current = head; current != NULL; current = current->next) {
+      length++;
+   }
+
+   return length;
+}
+
+
+// requirment 3.1 
+// prompt that shows up when opening the shell 
+void print_prompt(){
+		
+	char cwd[1024];
+	char hostname[1024];
+    char* login = getenv("USER");
+
+	gethostname(hostname, sizeof(hostname));
+	getcwd(cwd, sizeof(cwd));
+
+	printf("\n%s@%s: %s", login, hostname, cwd);
+}
+
+
+// requirement 3.1 
+// function forks and uses execvp to complete arbitary commands 
+int arbCommands(char** parsedInput){
+	// fork another process 
+	pid_t pid = fork();
+	
+	if (pid < 0) {
+		// the child failed in forking 
+		printf("\nCould not fork child");
+		return 0;
+	} else if (pid == 0) {
+		// use execvp to complete arbitary commands 
+		
+		if (execvp(parsedInput[0], parsedInput) < 0) {
+			printf("\nThis command is not supported, please try another input.");
+		}
+	} else {
+		// parent will wait for child to terminate
+		wait(NULL);
+		return 1;
+	}
+}
+
+
+// requirement 3.1 
+// where the ">" shows up
+// input string is taken in and put into "promptInputString"
+int takeInput(char* promptInputString, char* bg_command){
+	char* line_read;
+	line_read = readline(" > ");
+
+	// copying input from prompt into promptInputString and bg_command 
+	// bg_command is taking off "bg " just incase it used in bg commands 
+	if (strlen(line_read) != 0) {
+		promptInputString[0] = '\0';
+		strcpy(promptInputString, line_read);
+		bg_command[0] = '\0';
+		strncpy(bg_command, promptInputString + 3, strlen(promptInputString) - 2);
+
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+// requirement 3.1 
+// takes input from the prompt and splits the str by spaces 
+// the strings are put into an array (parsed)
+void parse(char* promptInputString, char** parsedInput){
+	for (int i = 0; i < MAX_ARRAY; i++) {
+		parsedInput[i] = strsep(&promptInputString, " ");
+
+		if (parsedInput[i] == NULL)
+			break;
+
+		if (strlen(parsedInput[i]) == 0)
+			i--;
+	}
+}
+
+// requirement 3.2 
+// using cd to change directories 
+int cdCommand(char** parsedInput){
+	char* env = getenv("HOME");
+
+	// just cd (home)
+	if ( strcmp(parsedInput[0], "cd") == 0 && parsedInput[1] == NULL ) {
+		printf("\n%s", env);
+		return 1;
+	//cd with ~ (home)
+	}else if (strcmp(parsedInput[0], "cd") == 0 && strcmp(parsedInput[1], "~") == 0){
+		printf("\n%s", env);
+		return 1;
+	// regular cd with second input (updated dirs)
+	}else if (strcmp(parsedInput[0], "cd") == 0){
+		chdir(parsedInput[1]);
+		return 1;
+	}else{
+		return 0;
+	}
+}
+
+// not a requirment in assignment but implemented for ease of use 
+// exit command 
+int exitCommand(char** parsedInput){
+	if (strcmp(parsedInput[0], "exit") == 0) {
+		exit(1);
+		return 0;
+	}else{
+		return 0;
+	}
+}
+
+// requirments 3.3 
+// commands with the bg command 
+// fork, child = evecvp, parent = add process to linked list 
+int bg_start(char** parsedInput, char* promptInputString, char* bg_command){
+
+	// check if bg 
+	if (strcmp(parsedInput[0], "bg") == 0) {
+
+		// copying and taking off "bg " from paredInput itno newParsedInput 
+		char *newParsedInput[MAX_ARRAY];
+		for (int i = 0; i < MAX_ARRAY; i++){
+			newParsedInput[i] = parsedInput[i+1];
+			if (parsedInput[i+1] == NULL){
+				break;
+			}
+
+		}
+
+
+		// fork for bg 
+		pid_t pid = fork();
+		
+		if (pid < 0) {
+			// the child failed in forking 
+			printf("\nCould not fork child");
+			return 0;
+		} else if (pid == 0) {
+			// child 
+			// use execvp to complete arbitary commands 
+			if (execvp(newParsedInput[0], newParsedInput) < 0) {
+				printf("\nThis command is not supported, please try another input");
+			}
+		} else {
+			// parent 
+			// add node of added background process to the linked list 
+			struct bg_process *newNode = (struct bg_process*) malloc(sizeof(struct bg_process));
+			newNode -> pid = pid;
+			strcpy(newNode -> command, bg_command);
+			newNode -> next = NULL;
+
+			// check if list is of size 0 
+			if (length() == 0){
+				head = newNode; 
+			}else{
+				// append bg_next 
+				struct bg_process *lastNode = head;
+				while(lastNode->next != NULL){
+					lastNode = lastNode -> next;
+				}
+				lastNode -> next = newNode;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+
+// function to print bg_process 
+void printList() {
+   struct bg_process *ptr = head;
+   printf("\n[ ");
+
+   //start from the beginning
+   while(ptr != NULL) {
+      printf("(%d,%s) ",ptr->pid,ptr->command);
+      ptr = ptr->next;
+   }
+	
+   printf(" ]");
+}
+
+// requirement 3.3 
+// bg_list command -> print processes in linked list 
+// HAVE TO ADD ARGS + name of file?
+int bg_list(char** parsedInput){
+	struct bg_process *pointer = head;
+	char cwd[1024];
+	getcwd(cwd, sizeof(cwd));
+
+	// check bglist 
+	if (strcmp(parsedInput[0], "bglist") == 0) {
+		// loop to find all bg jobs and then the total 
+		while(pointer != NULL) {
+			printf("\n%d: %s", pointer->pid, pointer -> command);
+			pointer = pointer->next;
+   		}
+		printf("\nTotal Background jobs: %d", length());
+		return 1;
+	}
+	return 0; 
+}
+
+// requirement 3.3 
+// check if the child has terminated
+int check_children(){
+	struct bg_process *current;
+	char cwd[1024];
+	getcwd(cwd, sizeof(cwd));
+
+	if (length() > 0){
+		
+		pid_t ter = waitpid(-1,NULL,WNOHANG); // waitpid will wait for any children and return 
+		
+		while (ter > 0){ // sucess of a child being done 
+		
+			if (head -> pid == ter){
+				// head child is done 
+				printf("\n%d: %s has terminated.", head -> pid, head -> command);
+				head = head -> next; 
+			}else{
+				// rest of the linked list 
+				for(current = head; current != NULL; current = current->next) {
+					if (current -> next -> pid == ter){
+						printf("\n%d: %s has terminated.", head -> pid, head -> command);
+						current -> next =  current -> next -> next; 
+					}
+				}
+			}
+			// update ter 
+			ter = waitpid(-1,NULL,WNOHANG);
+		}
+	}
+	return 1; 
+}
+
+
+int main(){
+	char promptInputString[MAX_LETTERS];
+	char bg_command[MAX_LETTERS];
+	char *parsedInput[MAX_ARRAY];
+
+	clear();
+
+	while (1) {
+		// always checks at the beginning 
+		check_children();
+
+		// print shell prompt 
+		print_prompt();
+
+		// grab input and put into promptInputString 
+		if (takeInput(promptInputString, bg_command))
+			continue;
+		
+		// put input into parsedInput
+		parse(promptInputString, parsedInput);
+	
+		// exit command 
+		if (exitCommand(parsedInput))
+			continue;
+
+		// cd command
+		if (cdCommand(parsedInput))
+			continue;
+
+
+		// bg command 
+		if (bg_start(parsedInput, promptInputString, bg_command))
+			continue; 
+
+		// bglist command 
+		if (bg_list(parsedInput))
+			continue;
+
+		// evecvp 
+		if (arbCommands(parsedInput))
+			continue;
+
+	}
+	return 0;
+}

@@ -1,0 +1,470 @@
+/*
+ * icsout3.c
+ *
+ * Starter file provided to students for Assignment #3, SENG 265,
+ * Spring 2021.
+ */
+// INCLUDES 
+#include <assert.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include "emalloc.h"
+#include "ics.h"
+#include "listy.h"
+
+// GLOBAL VARIABLES
+#define MAX_LINE_LEN 132
+#define MAX_EVENTS 500
+
+// FUNCTION DECLEARATIONS
+void print_event(node_t *n, void *arg);
+node_t *parse_file(FILE *fp, node_t *head);
+node_t *parse_rules(node_t *list);
+int Is_date_between(int yyyy1, int mm1, int dd1, int yyyy2, int mm2, int dd2, int yyyy3, int mm3, int dd3);
+void dt_increment(char *after, const char *before, int const num_days);
+
+// ALL FUNCTIONS 
+
+/*
+*   parse file: 
+*   - take in the file from command line
+*   - parses information and puts it in the struct / node
+*   - create the linked list 
+*/
+node_t *parse_file(FILE *fp, node_t *head){
+    // creating and initizating variables 
+    char line[MAX_LINE_LEN] = {0};
+    char *property;
+    char *value;
+    const char s[2] = ":";
+    char *token;
+
+    // creating a temp struct 
+    event_t *temp_event = NULL;
+    node_t  *temp_node  = NULL;
+    //node_t  *head = NULL;
+    
+
+    // loop thru line by line 
+    while (fgets(line, MAX_LINE_LEN, fp)){
+        token = strtok(line, s);
+        int k = 0;
+    
+        property = '\0';
+        value = '\0';
+        // grabbing tokens 
+        while(token != NULL){
+            if (k == 0) {
+                property = token;
+            }else{
+                value = token;
+            }
+            token = strtok(NULL, s);
+            k++;
+        }
+        
+        //printf("%s %s\n", property, value);
+        // inputting into the struct 
+        if(strcmp(property,"DTSTART") == 0){
+            temp_event = emalloc(sizeof(event_t));
+            strncpy(temp_event->dtstart, value, DT_LEN);
+
+            int ds_yyyy; 
+            int ds_mm;
+            int ds_dd;
+            
+            sscanf(temp_event->dtstart, "%4d%2d%2d", &ds_yyyy, &ds_mm, &ds_dd);            
+            // assume 10. No event will ever cross a day boundary.
+
+        }else if (strcmp(property,"DTEND") == 0){
+           strncpy(temp_event->dtend, value, DT_LEN);
+
+        }else if (strcmp(property,"LOCATION") == 0){
+           int len = strlen(value);
+           if (value[len - 1] == '\n') {
+                      value[len - 1] = '\0';
+           }
+            strncpy(temp_event->location, value, LOCATION_LEN);
+
+        }else if (strcmp(property,"SUMMARY") == 0){
+            //remove newline
+           int len = strlen(value);
+           if (value[len - 1] == '\n') {
+                      value[len - 1] = '\0';
+           }
+            strncpy(temp_event->summary, value, SUMMARY_LEN);
+
+        }else if (strcmp(property,"RRULE") == 0){
+            strncpy(temp_event->rrule, value, RRULE_LEN);       
+            
+        }else if (strcmp(property,"END") == 0 && strcmp(value,"VEVENT\n") == 0){
+            //printf("end event\n");
+            temp_node = new_node(temp_event);
+            head = add_end(head, temp_node);
+        }
+    
+    }
+    return head;
+    //apply(head, print_event, NULL);
+}
+
+/* 
+*   is_date_between: 
+*   - checks if date 2 is between date 1 and 3
+*   - returns: 
+*       1 if 2 >= 1 and 2 <= 3 i.e. 2 Between 1 and 3
+*       0 if 2 < 1 or 2 > 3 i.e. 2 Not Between 1 and 3
+*/
+int Is_date_between(int yyyy1, int mm1, int dd1, int yyyy2, int mm2, int dd2, int yyyy3, int mm3, int dd3) {
+    // creating structs, initizaling variables 
+
+    struct tm tm1;
+    struct tm tm2;
+    struct tm tm3;
+    time_t time1;
+    time_t time2;
+    time_t time3;
+
+
+
+    tm1.tm_year = yyyy1 - 1900;
+    tm1.tm_mon = mm1 - 1;
+    tm1.tm_mday = dd1;
+    tm1.tm_hour = 0;
+    tm1.tm_min = 0;
+    tm1.tm_sec = 0;
+    tm1.tm_isdst = -1;
+    time1 = mktime(&tm1);
+
+    tm2.tm_year = yyyy2 - 1900;
+    tm2.tm_mon = mm2 - 1;
+    tm2.tm_mday = dd2;
+    tm2.tm_hour = 0;
+    tm2.tm_min = 0;
+    tm2.tm_sec = 0;
+    tm2.tm_isdst = -1;
+    time2 = mktime(&tm2);
+
+    double diff = difftime(time1, time2);
+
+    // if date 2 >= date 1 
+    if (diff == 0 || diff < 0){
+        tm3.tm_year = yyyy3 - 1900;
+        tm3.tm_mon = mm3 - 1;
+        tm3.tm_mday = dd3;
+        tm3.tm_hour = 23;
+        tm3.tm_min = 59;
+        tm3.tm_sec = 59;
+        tm3.tm_isdst = -1;
+        time3 = mktime(&tm3);
+
+        diff = difftime(time3, time2);
+
+        // iff date 2 is <= date 3 
+        if (diff == 0 || diff < 0) {
+            return 0;
+        }else {
+            return 1;
+        }
+    }else{
+        return 0;
+    }
+}
+
+/*
+*   dt_increment: 
+*   - incrementing time 
+*   - using timedate 
+*/
+void dt_increment(char *after, const char *before, int const num_days){
+    struct tm temp_time; 
+    //*p_temp_time;
+    time_t    full_time;
+    //char      temp[5];
+
+    memset(&temp_time, 0, sizeof(struct tm));
+    sscanf(before, "%4d%2d%2d", &temp_time.tm_year,
+        &temp_time.tm_mon, &temp_time.tm_mday);
+    temp_time.tm_year -= 1900;
+    temp_time.tm_mon -= 1;
+    temp_time.tm_mday += num_days;
+
+    full_time = mktime(&temp_time);
+    after[0] = '\0';
+
+    strftime(after, 10, "%Y%m%d", localtime(&full_time));
+    strncpy(after + 8, before + 8, MAX_LINE_LEN - 8); 
+    after[MAX_LINE_LEN - 1] = '\0';
+}
+
+/*
+*   parse rules: 
+*   - find rrule
+*   - create nodes for repeats
+*   - add them to linked list 
+*/
+node_t *parse_rules(node_t *list){
+    node_t *head = list; 
+    //char dummy;
+    int rule_yyyy;
+    int rule_mm; 
+    int rule_dd; 
+    char *token; 
+    char *property;
+    char *value;
+    char new_dtstart[DT_LEN];
+    char old_dtstart[DT_LEN];
+    event_t *temp_event = NULL;
+    node_t  *temp_node  = NULL;
+    int rep_rule;
+    
+
+    struct rules {
+        char rule[MAX_LINE_LEN]; 
+    };
+    struct rules rule[10];
+
+    // looping thru the linked list 
+    for ( ; list != NULL; list = list->next) {
+        rep_rule = 0;
+        assert(list != NULL);
+
+        
+        temp_event = emalloc(sizeof(event_t));
+        event_t *event;
+        event = emalloc(sizeof(event_t));
+        event = list->val;
+        // we have found a rrule
+        printf("event rrule %s\n", event->rrule);
+        if (strcmp(event->rrule, "\n") != 0) {
+            //printf("found a rrule %s\n", event->rrule);
+            int k = 0;
+            const char t[2] = ";";
+            
+            //struct rules rule[10]; 
+            //memset(&rule,0,sizeof(struct rules));
+            memset(&rule,0,sizeof(struct rules));
+            //printf("event rrule %s\n", event->rrule);
+            token = strtok(event->rrule, t);
+            char repeat_end_date[9];
+            //printf("before splitting tokens: %s\n", temp_event->dtstart);
+            // grabbing tokens separated by ; 
+            while(token != NULL){
+                strncpy(rule[k].rule, token, strlen(token));
+                token = strtok(NULL, t);
+                k++;
+            }
+
+            // splitting rules AGAIN by = to find date of repeat  
+            const char z[2] = "=";
+            for (int r = 0; r < 10; r++){
+                token = strtok(rule[r].rule, z);
+                    k = 0;
+                    while(token != NULL){
+                        if (k == 0) {
+                            property = token;
+                        }else{
+                            value = token;
+                        }
+                    token = strtok(NULL, z);
+                    k++;
+                }
+                if (strncmp(property, "UNTIL", DT_LEN)==0){
+                    strncpy(repeat_end_date, value, DT_LEN);
+                }
+
+            }
+
+            sscanf(repeat_end_date, "%4d%2d%2d", &rule_yyyy, &rule_mm, &rule_dd);
+
+            int new_yyyy;
+            int new_mm;
+            int new_dd;
+
+            // set new start date to date of event
+            strncpy(new_dtstart, event->dtstart, DT_LEN);
+            sscanf(new_dtstart, "%4d%2d%2d", &new_yyyy, &new_mm, &new_dd);
+            //printf("new dtstart: %s", new_dtstart);
+            temp_event = emalloc(sizeof(event_t));
+            strncpy(temp_event->dtstart, value, DT_LEN);
+            
+            // copy old dtend, location and summary into new event (or temp_event)
+            
+            strncpy(temp_event->dtstart, event->dtend, DT_LEN);
+            strncpy(temp_event->location, event->location, LOCATION_LEN);
+            strncpy(temp_event->summary, event->summary, SUMMARY_LEN);
+            //int d = 0; 
+            //printf("before while loop: %s\n", temp_event->dtstart);
+            printf("new: %d %d %d rule: %d %d %d\n", new_yyyy, new_mm, new_dd, rule_yyyy, rule_mm, rule_dd);
+            // loop untill event date is between start of time and end of rule 
+            while (Is_date_between(1900, 1, 1, new_yyyy, new_mm, new_dd, rule_yyyy, rule_mm, rule_dd) && rep_rule <= MAX_EVENTS){ 
+                event = emalloc(sizeof(event_t));
+                strncpy(event->dtstart, new_dtstart, DT_LEN);
+                strncpy(event->dtend, temp_event->dtend, DT_LEN);
+                strncpy(event->location, temp_event->location, LOCATION_LEN);
+                strncpy(event->summary, temp_event->summary, SUMMARY_LEN);
+                printf("inside while loop: %s\n", temp_event->dtstart);
+                
+                temp_node = new_node(temp_event);
+                head = add_end(head, temp_node);  
+
+                // got to next week
+                strncpy(old_dtstart, event->dtstart, MAX_LINE_LEN);
+                dt_increment(new_dtstart, old_dtstart, 7);
+        
+                sscanf(new_dtstart, "%4d%2d%2d", &new_yyyy, &new_mm, &new_dd);
+                if (rep_rule > 500){
+                    exit(0);
+                }
+                rep_rule++;
+            }   
+
+        } // end of if 
+    
+    }
+    //head = peek_front(list);
+    return head;
+}
+
+void print_event(node_t *n, void *arg) {
+    assert(n != NULL);
+
+    event_t *event = n->val;
+
+    if (strcmp(event->rrule, "") == 0) {
+        printf("EVENT: %s %s '%s' '%s'\n", event->dtstart,
+            event->dtend, event->summary, event->location);
+    } else {
+        printf("EVENT: %s %s '%s' '%s' '%s'\n", event->dtstart,
+            event->dtend, event->summary, event->location,
+            event->rrule);
+    }
+}
+
+
+#ifdef DEBUG
+
+/*
+ * Just showing the use of the linked-list routines.
+ */
+
+void _demo() {
+    event_t *temp_event = NULL;
+    node_t  *temp_node  = NULL;
+    node_t  *head = NULL;
+
+    /* Add one event, without an RRULE */
+
+    temp_event = emalloc(sizeof(event_t));
+    strncpy(temp_event->dtstart, "20210306T120000", 17);
+    strncpy(temp_event->dtend, "20210306T160000", 17);
+    strncpy(temp_event->summary, "summary 1", SUMMARY_LEN);
+    strncpy(temp_event->location, "location 1", LOCATION_LEN);
+    temp_event->rrule[0] = '\0';
+    temp_node = new_node(temp_event);
+    head = add_front(head, temp_node);
+
+    /* Add a second event, with an RRULE */
+
+    temp_event = emalloc(sizeof(event_t));
+    strncpy(temp_event->dtstart, "20210307T093000", 17);
+    strncpy(temp_event->dtend, "20210307T102000", 17);
+    strncpy(temp_event->summary, "uvwxyz 1234567", SUMMARY_LEN);
+    strncpy(temp_event->location, "abcde 1234567", LOCATION_LEN);
+    strncpy(temp_event->rrule, "yada RULE yada UNTIL yada", RRULE_LEN);
+    temp_node = new_node(temp_event);
+    head = add_front(head, temp_node);
+
+    /* Print the list of events. */
+
+    apply(head, print_event, NULL);
+
+    /* Free up the memory. This is done rather deliberately
+     * and manually. A full-featured function might better
+     * serve for this. Asserts are liberally used here as they
+     * express state that *must* be true if all of the code is
+     * correctly working.
+     */
+
+    temp_node = head;
+    assert(temp_node != NULL);
+    head = remove_front(head);
+    temp_event = temp_node->val;
+    assert(temp_event != NULL);
+    free(temp_event);
+    free(temp_node);
+
+    temp_node = head;
+    assert(temp_node != NULL);
+    head = remove_front(head);
+    temp_event = temp_node->val;
+    assert(temp_event != NULL);
+    free(temp_event);
+    free(temp_node);
+   
+    assert(head == NULL); 
+    
+}
+
+#endif
+
+
+
+int main(int argc, char *argv[]){
+    int from_y = 0, from_m = 0, from_d = 0;
+    int to_y = 0, to_m = 0, to_d = 0;
+    char *filename = NULL;
+    int i; 
+    node_t  *head = NULL;
+    
+    for (i = 0; i < argc; i++) {
+        if (strncmp(argv[i], "--start=", 7) == 0) {
+            sscanf(argv[i], "--start=%d/%d/%d", &from_y, &from_m, &from_d);
+        } else if (strncmp(argv[i], "--end=", 5) == 0) {
+            sscanf(argv[i], "--end=%d/%d/%d", &to_y, &to_m, &to_d);
+        } else if (strncmp(argv[i], "--file=", 7) == 0) {
+            filename = argv[i]+7;
+        }
+    }
+
+    if (from_y == 0 || to_y == 0 || filename == NULL) {
+        fprintf(stderr, 
+            "usage: %s --start=yyyy/mm/dd --end=yyyy/mm/dd --file=icsfile\n",
+            argv[0]);
+        exit(1);
+    }
+    
+    // opening the input file and passing to parse_file
+    FILE *fp;
+    //char *str = "test text\n";
+    fp = fopen(filename, "r");
+
+        if (fp == NULL){
+            return 1;
+        }
+    head = parse_file(fp, head);
+    // securily closing input file 
+    fclose(fp);
+    head = parse_rules(head);
+    apply(head, print_event, NULL);
+
+    // NEED TO DEALLOCATE !!!!
+
+    //_demo();
+
+    /* 
+    * Showing some simple usage of the linked-list routines.
+    */
+
+   /*
+    #ifdef DEBUG
+        _demo();
+    #endif
+    */
+    exit(0);
+
+}
